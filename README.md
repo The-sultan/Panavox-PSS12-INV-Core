@@ -50,7 +50,7 @@ void loop() {
 
 ## ESPHome
 
-This library is used as the protocol core by the [Panavox PSS-12 INV ESPHome component](#) *(link coming soon)*, which exposes a full `climate` entity in Home Assistant.
+This library is used as the protocol core by the [Panavox PSS-12 INV ESPHome component](https://github.com/The-sultan/Panavox-PSS12-INV-ESPHome), which exposes a full `climate` entity in Home Assistant.
 
 ## Protocol
 
