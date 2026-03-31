@@ -1,0 +1,15 @@
+{
+  "name": "Panavox-PSS12-INV-Core",
+  "version": "0.1.0",
+  "description": "Driver library for the Panavox PSS-12 INV split inverter AC via W950 UART serial interface",
+  "keywords": ["AC", "HVAC", "UART", "Panavox", "climate"],
+  "authors": {
+    "name": "Farid Elias"
+  },
+  "frameworks": "arduino",
+  "platforms": "*",
+  "build": {
+    "srcDir": "src"
+  },
+  "documentation": "docs/Panavox_PSS-12_INV_Protocol_Specification.docx.pdf"
+}
