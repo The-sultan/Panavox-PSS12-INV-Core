@@ -52,6 +52,14 @@ void PanavoxAC::loop() {
     // Drive the TX state machine
     processTx();
 
+    // Fire deferred temperature command once the debounce window has elapsed.
+    if (_pendingTempCmd && now >= _tempCmdDue) {
+        _pendingTempCmd = false;
+        uint8_t p[PAYLOAD_SIZE] = {};
+        payloadTemp(_desired.target_temp, p);
+        enqueue(buildCommandFrame(p));
+    }
+
     // Schedule periodic status polling.
     // Runs unconditionally so the initial sync is retried if the first request times out,
     // and so HA reflects the real AC state immediately after every flash/reboot.
@@ -95,9 +103,10 @@ void PanavoxAC::setTargetTemp(float celsius) {
     _desired.target_temp = celsius;
 
     if (_desired.power) {
-        uint8_t p[PAYLOAD_SIZE] = {};
-        payloadTemp(celsius, p);
-        enqueue(buildCommandFrame(p));
+        // Debounce: defer the command by 1s so rapid button presses
+        // only send the final value.
+        _pendingTempCmd = true;
+        _tempCmdDue     = millis() + 1000;
     }
 }
 

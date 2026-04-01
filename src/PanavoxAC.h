@@ -60,6 +60,9 @@ private:
     uint32_t _lastPollTime  = 0;  // millis() when last status request was sent
     bool     _initialized   = false; // true after first valid status response
 
+    bool     _pendingTempCmd = false; // temperature command waiting for debounce
+    uint32_t _tempCmdDue     = 0;    // millis() when pending temp command should fire
+
     DeviceStatus   _status;
     AcDesiredState _desired;
 
