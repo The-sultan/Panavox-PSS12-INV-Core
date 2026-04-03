@@ -56,6 +56,8 @@ This library is used as the protocol core by the [Panavox PSS-12 INV ESPHome com
 
 The serial protocol is documented in [`docs/Panavox_PSS-12_INV_Protocol_Specification.docx.pdf`](docs/Panavox_PSS-12_INV_Protocol_Specification.docx.pdf).
 
+**Note for porters:** The Panavox PSS-12 INV sends a 150-byte status response frame (`LEN_STATUS_RSP = 0x8D`). This differs from the 62-byte `Device_Status` struct used in the original [esphome_airconintl](https://github.com/pslawinski/esphome_airconintl) codebase, which also caps its UART buffer at 128 bytes — too small to receive a valid frame from this unit. If adapting this library for another unit, verify the actual response frame size on your hardware before assuming compatibility.
+
 This is not an official manufacturer document. It was reverse-engineered by analysing the source code of the open-source ESPHome component for Hisense/Aircon International compatible units:
 
 > https://github.com/pslawinski/esphome_airconintl
