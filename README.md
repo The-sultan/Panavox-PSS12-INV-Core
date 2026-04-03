@@ -1,4 +1,4 @@
-# Panavox PSS-12 INV Core
+# Panavox PSS-12 INV Core — Arduino & ESP32 Driver Library
 
 A hardware-agnostic C++ driver library for controlling the **Panavox PSS-12 INV** split inverter air conditioner via its W950 WiFi module UART connector.
 
