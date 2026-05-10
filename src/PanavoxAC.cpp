@@ -52,6 +52,8 @@ void PanavoxAC::loop() {
     // Drive the TX state machine
     processTx();
 
+    uint32_t now = millis();
+
     // Fire deferred temperature command once the debounce window has elapsed.
     if (_pendingTempCmd && now >= _tempCmdDue) {
         _pendingTempCmd = false;
@@ -63,7 +65,6 @@ void PanavoxAC::loop() {
     // Schedule periodic status polling.
     // Runs unconditionally so the initial sync is retried if the first request times out,
     // and so HA reflects the real AC state immediately after every flash/reboot.
-    uint32_t now = millis();
     if (_queue.empty()
         && _commState == CommState::IDLE
         && (now - _lastPollTime) >= POLL_INTERVAL_MS)
