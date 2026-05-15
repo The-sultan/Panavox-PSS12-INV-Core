@@ -48,6 +48,17 @@ void loop() {
 }
 ```
 
+### Pinning to a stable version
+
+By default the example above tracks the latest commit on `main`. To pin to a specific release instead, append a version tag:
+
+```ini
+lib_deps =
+    panavox-core=https://github.com/The-sultan/Panavox-PSS12-INV-Core.git#v0.1.0
+```
+
+See the [Releases](https://github.com/The-sultan/Panavox-PSS12-INV-Core/releases) page for available versions.
+
 ## ESPHome
 
 This library is used as the protocol core by the [Panavox PSS-12 INV ESPHome component](https://github.com/The-sultan/Panavox-PSS12-INV-ESPHome), which exposes a full `climate` entity in Home Assistant.
