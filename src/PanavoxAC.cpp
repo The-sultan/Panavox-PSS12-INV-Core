@@ -13,7 +13,11 @@ PanavoxAC::PanavoxAC(Stream& serial) : _serial(serial) {
     // Advance the TX state machine as soon as F4 F5 is detected — the AC sends
     // the frame header+body immediately but delays the checksum+F4FB by up to 10s
     // (its internal sampling cycle). We don't need to wait for F4 FB to unblock the queue.
+    // Also clear the diagnostic buffer so warnings stop as soon as valid frames arrive.
     _parser.onFrameStart([this]() {
+        _diagBuf.clear();
+        _polarityWarnReady = true;
+        _wiringWarnReady   = true;
         if (_commState == CommState::WAITING_ACK) {
             if (!_queue.empty()) _queue.pop();
             _commState = CommState::IDLE;
@@ -34,6 +38,9 @@ void PanavoxAC::begin() {
     // Flush any stale bytes in the RX buffer
     while (_serial.available()) _serial.read();
     _parser.reset();
+    _diagBuf.clear();
+    _polarityWarnReady  = true;
+    _wiringWarnReady    = true;
     _commState   = CommState::IDLE;
     _initialized = false;
     _lastSendTime = 0;
@@ -44,10 +51,14 @@ void PanavoxAC::begin() {
 }
 
 void PanavoxAC::loop() {
-    // Feed all available RX bytes to the frame parser
+    // Feed all available RX bytes to the frame parser and accumulate for diagnostics
     while (_serial.available()) {
-        _parser.feed(static_cast<uint8_t>(_serial.read()));
+        uint8_t b = static_cast<uint8_t>(_serial.read());
+        _parser.feed(b);
+        if (_diagBuf.size() < DIAG_BUF_LIMIT) _diagBuf.push_back(b);
     }
+
+    if (_diagBuf.size() >= DIAG_TRIGGER_THRESHOLD) checkDiagnostics();
 
     // Drive the TX state machine
     processTx();
@@ -416,6 +427,44 @@ void PanavoxAC::payloadPowerOnWithFullState(AcMode mode, float temp_c, FanSpeed 
     out[17] = 0x04;
     out[19] = (fan == FanSpeed::FAN_QUIET) ? 0x30 : 0x10;
     out[21] = 0x14;  // horizontal swing change flag
+}
+
+// ---- Diagnostic detection ----
+
+void PanavoxAC::checkDiagnostics() {
+    // 6-byte signature present in every inverted-polarity status response.
+    // False-positive probability is ~1 in 2^48.
+    static const uint8_t SIG[] = {0x41, 0x41, 0x7F, 0xE5, 0x7F, 0x03};
+    constexpr size_t SIG_LEN = sizeof(SIG);
+
+    bool sig_found = false;
+    if (_diagBuf.size() >= SIG_LEN) {
+        for (size_t i = 0; i <= _diagBuf.size() - SIG_LEN; ++i) {
+            if (memcmp(_diagBuf.data() + i, SIG, SIG_LEN) == 0) {
+                sig_found = true;
+                break;
+            }
+        }
+    }
+
+    uint32_t now = millis();
+    if (sig_found) {
+        if (_polarityMismatchCb
+                && (_polarityWarnReady || now - _lastPolarityWarnMs >= DIAG_WARN_INTERVAL_MS)) {
+            _polarityWarnReady  = false;
+            _lastPolarityWarnMs = now;
+            _polarityMismatchCb();
+        }
+    } else {
+        if (_wiringIssueCb
+                && (_wiringWarnReady || now - _lastWiringWarnMs >= DIAG_WARN_INTERVAL_MS)) {
+            _wiringWarnReady  = false;
+            _lastWiringWarnMs = now;
+            _wiringIssueCb();
+        }
+    }
+
+    _diagBuf.clear();
 }
 
 void PanavoxAC::enqueueFullStateOnPowerOn() {

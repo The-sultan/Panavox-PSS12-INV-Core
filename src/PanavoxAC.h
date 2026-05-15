@@ -42,6 +42,8 @@ public:
     // --- Callbacks ---
     void onStatusUpdate(std::function<void(const DeviceStatus&)> cb) { _statusCb = cb; }
     void onError(std::function<void(AcError)> cb)                    { _errorCb  = cb; }
+    void onPolarityMismatch(std::function<void()> cb)                { _polarityMismatchCb = cb; }
+    void onWiringIssue(std::function<void()> cb)                     { _wiringIssueCb      = cb; }
 
     // --- Accessors ---
     const DeviceStatus&    getStatus()       const { return _status; }
@@ -63,11 +65,24 @@ private:
     bool     _pendingTempCmd = false; // temperature command waiting for debounce
     uint32_t _tempCmdDue     = 0;    // millis() when pending temp command should fire
 
+    // --- Diagnostic detection ---
+    static constexpr size_t   DIAG_BUF_LIMIT        = 64;
+    static constexpr size_t   DIAG_TRIGGER_THRESHOLD = 20;
+    static constexpr uint32_t DIAG_WARN_INTERVAL_MS  = 30000;
+
+    std::vector<uint8_t> _diagBuf;
+    bool     _polarityWarnReady  = true;
+    bool     _wiringWarnReady    = true;
+    uint32_t _lastPolarityWarnMs = 0;
+    uint32_t _lastWiringWarnMs   = 0;
+
     DeviceStatus   _status;
     AcDesiredState _desired;
 
     std::function<void(const DeviceStatus&)> _statusCb;
     std::function<void(AcError)>             _errorCb;
+    std::function<void()>                    _polarityMismatchCb;
+    std::function<void()>                    _wiringIssueCb;
 
     // Internal: queue a frame. Every frame expects a status response from the AC.
     void enqueue(std::vector<uint8_t> frame);
@@ -100,4 +115,8 @@ private:
 
     // Enqueue all frames required to bring the AC to the desired state on power-on
     void enqueueFullStateOnPowerOn();
+
+    // Inspect _diagBuf for polarity-mismatch signature or unexpected bytes,
+    // fire the appropriate rate-limited callback, then clear the buffer.
+    void checkDiagnostics();
 };
