@@ -54,7 +54,7 @@ By default the example above tracks the latest commit on `main`. To pin to a spe
 
 ```ini
 lib_deps =
-    panavox-core=https://github.com/The-sultan/Panavox-PSS12-INV-Core.git#v0.1.0
+    panavox-core=https://github.com/The-sultan/Panavox-PSS12-INV-Core.git#v1.0.0
 ```
 
 See the [Releases](https://github.com/The-sultan/Panavox-PSS12-INV-Core/releases) page for available versions.
