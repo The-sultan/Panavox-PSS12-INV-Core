@@ -440,12 +440,14 @@ void PanavoxAC::checkDiagnostics() {
     // Only bytes received while _parserInFrame == false reach here.
     // (Frame body bytes are excluded at the push site in loop().)
     //
-    // Two mutually exclusive diagnoses:
-    //   sig found → polarity mismatch (AC responding but inverted)
-    //   no sig, enough bytes → wiring issue (unrecognized garbage)
+    // A single inverted frame spans ~40 bytes and may arrive across several
+    // loop() calls. The buffer is NOT cleared until a definitive result is
+    // reached, so the full frame accumulates before the diagnosis is made:
+    //
+    //   sig found (anywhere in buffer)  → polarity mismatch; clear and restart
+    //   buffer filled (DIAG_BUF_LIMIT)  → wiring issue;      clear and restart
+    //   neither                          → return, keep accumulating
 
-    // 6-byte signature present in every inverted-polarity status response.
-    // False-positive probability ~1 in 2^48.
     static const uint8_t POLARITY_SIG[] = {0x41, 0x41, 0x7F, 0xE5, 0x7F, 0x03};
     constexpr size_t SIG_LEN = sizeof(POLARITY_SIG);
 
@@ -459,6 +461,9 @@ void PanavoxAC::checkDiagnostics() {
         }
     }
 
+    // Not conclusive yet — wait for more bytes before committing to a diagnosis.
+    if (!sig_found && _diagBuf.size() < DIAG_BUF_LIMIT) return;
+
     uint32_t now = millis();
 
     if (sig_found) {
@@ -468,7 +473,8 @@ void PanavoxAC::checkDiagnostics() {
             _lastPolarityWarnMs = now;
             _polarityMismatchCb();
         }
-    } else if (_diagBuf.size() >= DIAG_TRIGGER_THRESHOLD) {
+    } else {
+        // Buffer full (DIAG_BUF_LIMIT bytes) with no polarity signature.
         if (_wiringIssueCb
                 && (_wiringWarnReady || now - _lastWiringWarnMs >= DIAG_WARN_INTERVAL_MS)) {
             _wiringWarnReady  = false;
