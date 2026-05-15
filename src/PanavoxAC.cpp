@@ -8,13 +8,15 @@ using namespace PanavoxProtocol;
 
 PanavoxAC::PanavoxAC(Stream& serial) : _serial(serial) {
     _parser.onFrame([this](const uint8_t* frame, size_t len) {
+        _parserInFrame = false;
         handleFrame(frame, len);
     });
     // Advance the TX state machine as soon as F4 F5 is detected — the AC sends
     // the frame header+body immediately but delays the checksum+F4FB by up to 10s
     // (its internal sampling cycle). We don't need to wait for F4 FB to unblock the queue.
-    // Also clear the diagnostic buffer so warnings stop as soon as valid frames arrive.
+    // Also stop diagnostic accumulation: frame body bytes are not diagnostic noise.
     _parser.onFrameStart([this]() {
+        _parserInFrame     = true;
         _diagBuf.clear();
         _polarityWarnReady = true;
         _wiringWarnReady   = true;
@@ -25,6 +27,7 @@ PanavoxAC::PanavoxAC(Stream& serial) : _serial(serial) {
         }
     });
     _parser.onError([this](FrameParser::FrameError err) {
+        _parserInFrame = false;
         if (!_errorCb) return;
         switch (err) {
         case FrameParser::FrameError::TOO_SHORT:          _errorCb(AcError::INVALID_FRAME);     break;
@@ -41,6 +44,7 @@ void PanavoxAC::begin() {
     _diagBuf.clear();
     _polarityWarnReady  = true;
     _wiringWarnReady    = true;
+    _parserInFrame = false;
     _commState   = CommState::IDLE;
     _initialized = false;
     _lastSendTime = 0;
@@ -55,7 +59,7 @@ void PanavoxAC::loop() {
     while (_serial.available()) {
         uint8_t b = static_cast<uint8_t>(_serial.read());
         _parser.feed(b);
-        if (_diagBuf.size() < DIAG_BUF_LIMIT) _diagBuf.push_back(b);
+        if (!_parserInFrame && _diagBuf.size() < DIAG_BUF_LIMIT) _diagBuf.push_back(b);
     }
 
     if (_diagBuf.size() >= DIAG_TRIGGER_THRESHOLD) checkDiagnostics();
@@ -202,8 +206,9 @@ void PanavoxAC::processTx() {
     if (_commState == CommState::WAITING_ACK) {
         if ((now - _lastSendTime) >= ACK_TIMEOUT_MS) {
             if (!_queue.empty()) _queue.pop();
-            _commState = CommState::IDLE;
-            _lastPollTime = now;  // prevent immediate re-poll while AC may still be mid-frame
+            _commState     = CommState::IDLE;
+            _parserInFrame = false;  // re-arm diagnostics if frame never completed
+            _lastPollTime  = now;    // prevent immediate re-poll while AC may still be mid-frame
             if (_errorCb) _errorCb(AcError::TIMEOUT);
         }
         return;
@@ -432,22 +437,20 @@ void PanavoxAC::payloadPowerOnWithFullState(AcMode mode, float temp_c, FanSpeed 
 // ---- Diagnostic detection ----
 
 void PanavoxAC::checkDiagnostics() {
-    // Priority 1: valid frame start — parser is already decoding this data, no warning needed.
-    bool frame_started = false;
-    for (size_t i = 0; i + 1 < _diagBuf.size(); ++i) {
-        if (_diagBuf[i] == 0xF4 && _diagBuf[i + 1] == 0xF5) {
-            frame_started = true;
-            break;
-        }
-    }
+    // Only bytes received while _parserInFrame == false reach here.
+    // (Frame body bytes are excluded at the push site in loop().)
+    //
+    // Two mutually exclusive diagnoses:
+    //   sig found → polarity mismatch (AC responding but inverted)
+    //   no sig, enough bytes → wiring issue (unrecognized garbage)
 
-    // Priority 2: 6-byte polarity-mismatch signature (inverted status response).
+    // 6-byte signature present in every inverted-polarity status response.
     // False-positive probability ~1 in 2^48.
     static const uint8_t POLARITY_SIG[] = {0x41, 0x41, 0x7F, 0xE5, 0x7F, 0x03};
     constexpr size_t SIG_LEN = sizeof(POLARITY_SIG);
 
     bool sig_found = false;
-    if (!frame_started && _diagBuf.size() >= SIG_LEN) {
+    if (_diagBuf.size() >= SIG_LEN) {
         for (size_t i = 0; i <= _diagBuf.size() - SIG_LEN; ++i) {
             if (memcmp(_diagBuf.data() + i, POLARITY_SIG, SIG_LEN) == 0) {
                 sig_found = true;
@@ -458,9 +461,7 @@ void PanavoxAC::checkDiagnostics() {
 
     uint32_t now = millis();
 
-    if (frame_started) {
-        // Normal communication in progress — suppress all diagnostic warnings.
-    } else if (sig_found) {
+    if (sig_found) {
         if (_polarityMismatchCb
                 && (_polarityWarnReady || now - _lastPolarityWarnMs >= DIAG_WARN_INTERVAL_MS)) {
             _polarityWarnReady  = false;

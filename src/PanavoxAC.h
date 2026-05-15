@@ -62,8 +62,9 @@ private:
     uint32_t _lastPollTime  = 0;  // millis() when last status request was sent
     bool     _initialized   = false; // true after first valid status response
 
-    bool     _pendingTempCmd = false; // temperature command waiting for debounce
-    uint32_t _tempCmdDue     = 0;    // millis() when pending temp command should fire
+    bool     _pendingTempCmd  = false; // temperature command waiting for debounce
+    uint32_t _tempCmdDue      = 0;    // millis() when pending temp command should fire
+    bool     _parserInFrame   = false; // true while the parser is inside a valid F4F5 frame
 
     // --- Diagnostic detection ---
     static constexpr size_t   DIAG_BUF_LIMIT        = 64;
