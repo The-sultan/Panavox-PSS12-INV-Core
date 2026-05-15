@@ -432,15 +432,24 @@ void PanavoxAC::payloadPowerOnWithFullState(AcMode mode, float temp_c, FanSpeed 
 // ---- Diagnostic detection ----
 
 void PanavoxAC::checkDiagnostics() {
-    // 6-byte signature present in every inverted-polarity status response.
-    // False-positive probability is ~1 in 2^48.
-    static const uint8_t SIG[] = {0x41, 0x41, 0x7F, 0xE5, 0x7F, 0x03};
-    constexpr size_t SIG_LEN = sizeof(SIG);
+    // Priority 1: valid frame start — parser is already decoding this data, no warning needed.
+    bool frame_started = false;
+    for (size_t i = 0; i + 1 < _diagBuf.size(); ++i) {
+        if (_diagBuf[i] == 0xF4 && _diagBuf[i + 1] == 0xF5) {
+            frame_started = true;
+            break;
+        }
+    }
+
+    // Priority 2: 6-byte polarity-mismatch signature (inverted status response).
+    // False-positive probability ~1 in 2^48.
+    static const uint8_t POLARITY_SIG[] = {0x41, 0x41, 0x7F, 0xE5, 0x7F, 0x03};
+    constexpr size_t SIG_LEN = sizeof(POLARITY_SIG);
 
     bool sig_found = false;
-    if (_diagBuf.size() >= SIG_LEN) {
+    if (!frame_started && _diagBuf.size() >= SIG_LEN) {
         for (size_t i = 0; i <= _diagBuf.size() - SIG_LEN; ++i) {
-            if (memcmp(_diagBuf.data() + i, SIG, SIG_LEN) == 0) {
+            if (memcmp(_diagBuf.data() + i, POLARITY_SIG, SIG_LEN) == 0) {
                 sig_found = true;
                 break;
             }
@@ -448,14 +457,17 @@ void PanavoxAC::checkDiagnostics() {
     }
 
     uint32_t now = millis();
-    if (sig_found) {
+
+    if (frame_started) {
+        // Normal communication in progress — suppress all diagnostic warnings.
+    } else if (sig_found) {
         if (_polarityMismatchCb
                 && (_polarityWarnReady || now - _lastPolarityWarnMs >= DIAG_WARN_INTERVAL_MS)) {
             _polarityWarnReady  = false;
             _lastPolarityWarnMs = now;
             _polarityMismatchCb();
         }
-    } else {
+    } else if (_diagBuf.size() >= DIAG_TRIGGER_THRESHOLD) {
         if (_wiringIssueCb
                 && (_wiringWarnReady || now - _lastWiringWarnMs >= DIAG_WARN_INTERVAL_MS)) {
             _wiringWarnReady  = false;
